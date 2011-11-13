@@ -26,6 +26,10 @@
 (def tables-list 
  (get-sql-metadata db .getTables nil nil nil (into-array ["TABLE" "VIEW"])))
 
+(defn cols-list [table]
+  (let [data (get-sql-metadata db .getColumns nil nil table nil)]
+  (map :column_name data)))
+
 (defn db-to-data [id]
   (sql/with-connection db
     (sql/with-query-results dataframe [(format "select * from %s" id)]

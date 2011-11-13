@@ -10,4 +10,11 @@
                (include-css "/css/noir.css")]
               [:body
                [:div#wrapper
-                content]]))
+              [:div#header
+                [:h1 "Welcome to my-site"] 
+                [:ul 
+                  [:li 
+                   [:a {:href "/test"} "test"] 
+                   [:a {:href "/dataset/create"} "Dataset Create"]
+                   [:a {:href "/dataset/list"} "Datasets List"]]]]
+                  content]]))
