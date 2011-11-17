@@ -23,6 +23,11 @@
       (apply sql/create-table table (for [col column-names] [col]))
       (apply sql/insert-records table rows))))
 
+(defn insert-records [table rows]
+  (sql/with-connection db
+    (sql/transaction
+      (sql/insert-records table rows))))
+
 (def tables-list 
  (get-sql-metadata db .getTables nil nil nil (into-array ["TABLE" "VIEW"])))
 

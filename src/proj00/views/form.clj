@@ -62,24 +62,34 @@
   (do (db/cols-list table)))
 
 (defpartial form-dataset [cols-list]
-  (text-field "dataset_nm" "Input here dataset name")[:br]
-  (drop-down "table" tables-n)
-  (submit-button "Refresh")[:br]
+  (text-field "dataset-nm" "Input here dataset name")[:br]
+  (assoc-in (drop-down "table" tables-n) [1 :onclick] "this.form.submit()")[:br]
+  [:input {:type "submit" :value "Submit" :name "name"}][:br]
   (mapcat #(vector (check-box %) % [:br]) cols-list) 
   )
 
 (defpage "/dataset/create" []
   (common/layout
     (form-to [:post "/dataset/create"]
-      (form-dataset (get-cols-nms (first tables-n))))))
+      (form-dataset(get-cols-nms (first tables-n))))))
 
 (defpage [:post "/dataset/create"] {:as ks}
   (common/layout
-    (prn ks)
     (let [table (ks :table)]
-      (form-to [:post "/dataset/create"] 
-        (form-dataset (get-cols-nms table))))))
-
+      (let [cols (get-cols-nms table)]
+        (form-to [:post "/dataset/create"] 
+          (if (= (:name ks) nil)
+            (form-dataset cols)
+            (let [sel-ks 
+                  (zipmap 
+                    (vector "ks" "datasetnm") 
+                    (vector (apply str (interpose "," (keys (into {} 
+                      (filter #(= (second %) true) 
+                      (merge-with = (zipmap cols cols)
+                                    (let [cl-ks (map name (keys ks))]
+                                    (zipmap cl-ks cl-ks))))))))
+                            (:dataset-nm ks)))] 
+                  (db/insert-records "datasets" sel-ks))))))))
 
 ;/DATASET/SHOW
 ;VARS: SelectColumns; DropDown-Opt

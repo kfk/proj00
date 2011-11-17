@@ -1,4 +1,5 @@
 (ns proj00.server
+  (:gen-class)
   (:require [noir.server :as server]))
 
 (server/load-views "src/proj00/views/")
