@@ -55,6 +55,13 @@
 
 (defpage "/dataset/list" []
     (common/layout
+      (let [db-data (db/db-to-data "datasets")]
+      (prn (map :tablenm db-data))
+      (prn (filter #(= (:datasetnm %) "prova3") db-data))
+      (for [table-n (map :datasetnm db-data)] [:ul [:li [:a {:href (str "show/"table-n"/prova1")} table-n]]]))))
+
+(defpage "/dataset/list-bk" []
+    (common/layout
       (for [table-n tables-n] [:ul [:li [:a {:href (str "show/"table-n)} table-n]]])))
 
 ;DATASET/CREATE
@@ -73,6 +80,7 @@
     (form-to [:post "/dataset/create"]
       (form-dataset(get-cols-nms (first tables-n))))))
 
+;TODO ADD Validation and check unique
 (defpage [:post "/dataset/create"] {:as ks}
   (common/layout
     (let [table (ks :table)]
@@ -82,13 +90,14 @@
             (form-dataset cols)
             (let [sel-ks 
                   (zipmap 
-                    (vector "ks" "datasetnm") 
+                    (vector "ks" "datasetnm" "tablenm") 
                     (vector (apply str (interpose "," (keys (into {} 
                       (filter #(= (second %) true) 
                       (merge-with = (zipmap cols cols)
                                     (let [cl-ks (map name (keys ks))]
                                     (zipmap cl-ks cl-ks))))))))
-                            (:dataset-nm ks)))] 
+                            (:dataset-nm ks)
+                            table))] 
                   (db/insert-records "datasets" sel-ks))))))))
 
 ;/DATASET/SHOW
@@ -101,26 +110,40 @@
 (def sel-cols
   [:col2 :col3])
 
-(defpartial drop-downs [nms]
+(defpartial drop-downs-bk [nms]
   ;(for [nm (keys nms)] (drop-down nm (get nms nm)))
   (mapcat #(vector (drop-down % (nms %)) [:br]) (keys nms))
   (submit-button "Refresh"))
 
-(defpage "/dataset/show/:id" {:keys [id]}
+(defpartial drop-downs [nms]
+  (assoc-in (drop-down "dgroups" sel-cols) [1 :onclick] "this.form.submit()")[:br] 
+  (submit-button "Refresh"))
+
+(defpage "/dataset/show/:dataset-nm/:table-nm" {:keys [dataset-nm table-nm]}
+  (let [db-data (db/db-to-data "datasets")]
+    (let [dat-det (filter #(= dataset-nm) db-data)]
+      (common/layout
+        (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
+          (drop-downs sel-opt))
+        (dataframe table-nm)))))
+
+(defpage "/dataset/show-/:id" {:keys [id]}
   (common/layout
     (form-to [:post (format "/dataset/show/%s" id)]
       (drop-downs sel-opt)
         )
     (html-table (dataframe id))))
 
-(defpage [:post "/dataset/show/:id"] {:keys [id] :as t}
+(defpage [:post "/dataset/show/:dataset-nm/:table-nm"] {:keys [dataset-nm table-nm] :as t}
   (common/layout
     [:p (:test t)]
     (prn (map keyword (remove (set [""]) (flatten (vals (dissoc t :id))))))
+    (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
+      (drop-downs sel-opt))
     (html-table 
       (sum-by 
-        (dataframe id) 
+        (dataframe table-nm) 
         (reverse (map keyword (remove (set [""]) (flatten (vals (dissoc t :id))))))
         sel-cols))
-    [:a {:href (format "/dataset/show/%s" id)} "Back"]
+    [:a {:href (format "/dataset/show/%s" dataset-nm)} "Back"]
     ))
