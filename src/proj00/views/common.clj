@@ -13,8 +13,7 @@
               [:div#header
                 [:h1 "Welcome to my-site"] 
                 [:ul 
-                  [:li 
-                   [:a {:href "/test"} "test"] 
+                  [:li  
                    [:a {:href "/dataset/create"} "Dataset Create"]
                    [:a {:href "/dataset/list"} "Datasets List"]]]]
                   content]]))
