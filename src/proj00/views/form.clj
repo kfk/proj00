@@ -3,6 +3,7 @@
             [proj00.operations.database :as db]
             [noir.validation :as vali]
             [noir.response :as resp]
+            [noir.session :as ses]
             [clojure.contrib.io :as io])
   (:use noir.core
         hiccup.form-helpers
@@ -37,8 +38,7 @@
     (for [k (keys aggregated)]
       (merge 
         (apply merge-with + (for [x (get aggregated k)] (select-keys x sel-cols))) 
-        (zipmap attrs k)
-        ))))
+        (zipmap attrs k)))))
 
 ;/DATASET
 (defn dataframe [id]
@@ -68,9 +68,12 @@
 (defn get-cols-nms [table] 
   (do (db/cols-list table)))
 
-(defpartial form-dataset [cols-list]
+(defpartial form-dataset [cols-list table]
   (text-field "dataset-nm" "Input here dataset name")[:br]
-  (assoc-in (drop-down "table" tables-n) [1 :onclick] "this.form.submit()")[:br]
+  (if (= table nil)
+    (assoc-in (drop-down "table" tables-n) [1 :onchange] "this.form.submit()")
+    (assoc-in (drop-down "table" (conj (remove #(= % table) tables-n) table))
+ [1 :onchange] "this.form.submit()"))[:br]  
   [:input {:type "submit" :value "Submit" :name "name"}][:br]
   (mapcat #(vector (check-box %) % [:br]) cols-list) 
   )
@@ -78,72 +81,64 @@
 (defpage "/dataset/create" []
   (common/layout
     (form-to [:post "/dataset/create"]
-      (form-dataset(get-cols-nms (first tables-n))))))
+      (form-dataset(get-cols-nms (first tables-n)) nil))))
 
 ;TODO ADD Validation and check unique
 (defpage [:post "/dataset/create"] {:as ks}
   (common/layout
     (let [table (ks :table)]
-      (let [cols (get-cols-nms table)]
+      (let [cols (get-cols-nms table)] 
         (form-to [:post "/dataset/create"] 
-          (if (= (:name ks) nil)
-            (form-dataset cols)
+            (if (= (:name ks) nil)
+            (form-dataset cols table)
             (let [sel-ks 
-                  (zipmap 
-                    (vector "ks" "datasetnm" "tablenm") 
-                    (vector (apply str (interpose "," (keys (into {} 
-                      (filter #(= (second %) true) 
-                      (merge-with = (zipmap cols cols)
-                                    (let [cl-ks (map name (keys ks))]
-                                    (zipmap cl-ks cl-ks))))))))
-                            (:dataset-nm ks)
-                            table))] 
+              (let [cl-ks (map name (keys ks))]
+                (zipmap 
+                    (vector "selcols" "selopt" "datasetnm" "tablenm") 
+                    (vector 
+                      (apply str (interpose "," (keys (into {} 
+                        (filter #(= (second %) true) 
+                          (merge-with = (zipmap cols cols)
+                            (zipmap cl-ks cl-ks)))))))
+                      (apply str (interpose "," (keys (into {} 
+                        (apply dissoc (zipmap cols cols) (keys (zipmap cl-ks cl-ks)))))))
+                      (:dataset-nm ks)
+                      table)))]
                   (db/insert-records "datasets" sel-ks))))))))
 
 ;/DATASET/SHOW
 ;VARS: SelectColumns; DropDown-Opt
 ;TO DO: handle better the data. Revise "dataframe" function (should also take from other resources, not only db.
 
-(def sel-opt
-  {"alessio" [" " :col0], "test" [" " :col0 :col1]})
+(defn sel-opt [dataset-nm]
+  (let [cols (filter #(= (:datasetnm %) dataset-nm) (db/db-to-data "datasets"))]
+   (map keyword (clojure.string/split (:selopt (first  cols)) #","))))
 
-(def sel-cols
-  [:col2 :col3])
-
-(defpartial drop-downs-bk [nms]
-  ;(for [nm (keys nms)] (drop-down nm (get nms nm)))
-  (mapcat #(vector (drop-down % (nms %)) [:br]) (keys nms))
-  (submit-button "Refresh"))
+(defn sel-cols [dataset-nm]
+  (let [cols (filter #(= (:datasetnm %) dataset-nm) (db/db-to-data "datasets"))]
+   (map keyword (clojure.string/split (:selcols (first  cols)) #","))))
 
 (defpartial drop-downs [nms]
-  (assoc-in (drop-down "dgroups" sel-cols) [1 :onclick] "this.form.submit()")[:br] 
+  (assoc-in (drop-down "dgroups" nms) [1 :onclick] "this.form.submit()")[:br] 
   (submit-button "Refresh"))
 
-(defpage "/dataset/show/:dataset-nm/:table-nm" {:keys [dataset-nm table-nm]}
-  (let [db-data (db/db-to-data "datasets")]
-    (let [dat-det (filter #(= dataset-nm) db-data)]
+(defpage "/dataset/show/:dataset-nm/:table-nm" {:keys [dataset-nm table-nm]}  
       (common/layout
         (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
-          (drop-downs sel-opt))
-        (dataframe table-nm)))))
+          (drop-downs (sel-opt dataset-nm)))
+        (html-table (dataframe table-nm))))
 
-(defpage "/dataset/show-/:id" {:keys [id]}
-  (common/layout
-    (form-to [:post (format "/dataset/show/%s" id)]
-      (drop-downs sel-opt)
-        )
-    (html-table (dataframe id))))
+(defpage [:post "/dataset/show/:dataset-nm/:table-nm"] {:keys [dataset-nm table-nm] :as rs}    
+  (let [ _rs (assoc-in rs [:dgroups] (remove nil? (list (ses/get :dgroups) (:dgroups rs))))] 
+    (ses/put! :dgroups (:dgroups rs))
+      (common/layout
+      (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
+        (drop-downs (sel-opt dataset-nm)))
+      (html-table 
+        (sum-by 
+          (dataframe table-nm) 
+          (reverse (map keyword (remove (set [""]) (flatten (vals (dissoc _rs :dataset-nm :table-nm))))))
+          (sel-cols dataset-nm)))
+      [:a {:href (format "/dataset/show/%s/%s" dataset-nm table-nm)} "Back"]
+    )))
 
-(defpage [:post "/dataset/show/:dataset-nm/:table-nm"] {:keys [dataset-nm table-nm] :as t}
-  (common/layout
-    [:p (:test t)]
-    (prn (map keyword (remove (set [""]) (flatten (vals (dissoc t :id))))))
-    (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
-      (drop-downs sel-opt))
-    (html-table 
-      (sum-by 
-        (dataframe table-nm) 
-        (reverse (map keyword (remove (set [""]) (flatten (vals (dissoc t :id))))))
-        sel-cols))
-    [:a {:href (format "/dataset/show/%s" dataset-nm)} "Back"]
-    ))
