@@ -11,9 +11,11 @@
               [:body
                [:div#wrapper
               [:div#header
-                [:h1 "Welcome to my-site"] 
+                [:h1 "Happy data"] 
                 [:ul 
                   [:li  
+                   [:a {:href "/"} "Home"]
+                   [:a {:href "/data/import"} "Data Import"]
                    [:a {:href "/dataset/create"} "Dataset Create"]
                    [:a {:href "/dataset/list"} "Datasets List"]]]]
                   content]]))

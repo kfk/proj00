@@ -16,17 +16,26 @@
 
 (defpage "/" []
   (common/layout
-    [:p "It works!"]))
+    [:p "Please, import some data (only csv import supported for now) and start your journey."]))
 
-(defpage "/dataset/add" {:as u_file}
+;DATA/IMPORT
+(defpage "/data/import" {:as u_file}
   (common/layout 
     [:p "Please, choose a csv file to add to the dataset."]
     (form-to {:enctype "multipart/form-data"}
-      [:post "/dataset/add"]
+      [:post "/data/import"]
       [:p "Table name" (text-field "table-name")]
       (user-fields u_file)
       (submit-button "Add Dataset"))))
 
+(defpage [:post "/data/import"] {:keys [u_file] :as params}
+  (io/copy (io/file (:tempfile u_file)) (io/file "tmp/tmp"))
+  (let [dataset (read-dataset "tmp/tmp")] 
+    (db/data-to-db (:table-name params) (:column-names dataset) (:rows dataset))
+    (common/layout
+      [:p "Imported Successfully"])))
+
+;Calc functions
 (defn html-table [dataset]
   [:table {:class "gridtable"} 
    [:tr (map (fn [x] [:th (name x)]) (keys (first dataset)))]
@@ -45,13 +54,6 @@
   (db/db-to-data id))
 
 (def tables-n (map :table_name db/tables-list))
-
-(defpage [:post "/dataset/add"] {:keys [u_file] :as params}
-  (io/copy (io/file (:tempfile u_file)) (io/file "tmp/tmp"))
-  (let [dataset (read-dataset "tmp/tmp")] 
-    (db/data-to-db (:table-name params) (:column-names dataset) (:rows dataset))
-    (common/layout
-      [:p "Imported Successfully"])))
 
 (defpage "/dataset/list" []
     (common/layout
