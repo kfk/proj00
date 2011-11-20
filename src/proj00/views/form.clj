@@ -11,8 +11,10 @@
         [incanter core io]
         ))
 
-(defpartial user-fields [{:keys [u_file]}]
-  (file-upload :u_file))  
+(defpartial data-import-form [{:keys [u_file]}]
+  (file-upload :u_file)[:br]
+  (check-box "csv_header") "Select if the file has a header" [:br]
+  (submit-button "Add Dataset"))[:br]
 
 (defpage "/" []
   (common/layout
@@ -25,15 +27,14 @@
     (form-to {:enctype "multipart/form-data"}
       [:post "/data/import"]
       [:p "Table name" (text-field "table-name")]
-      (user-fields u_file)
-      (submit-button "Add Dataset"))))
+      (data-import-form u_file))))
 
 (defpage [:post "/data/import"] {:keys [u_file] :as params}
   (io/copy (io/file (:tempfile u_file)) (io/file "tmp/tmp"))
-  (let [dataset (read-dataset "tmp/tmp")] 
-    (db/data-to-db (:table-name params) (:column-names dataset) (:rows dataset))
-    (common/layout
-      [:p "Imported Successfully"])))
+  (let [dataset (read-dataset "tmp/tmp" :delim \tab)] (prn dataset)))
+    ;(db/data-to-db (:table-name params) (:column-names dataset) (:rows dataset))
+    ;(common/layout
+    ;  [:p "Imported Successfully"])))
 
 ;Calc functions
 (defn html-table [dataset]
