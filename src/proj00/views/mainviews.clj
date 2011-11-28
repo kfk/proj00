@@ -4,7 +4,9 @@
             [noir.validation :as vali]
             [noir.response :as resp]
             [noir.session :as ses]
-            [clojure.contrib.io :as io])
+            [clojure.contrib.io :as io]
+            [clojure.contrib.string :as st]
+            [clojure.contrib.math :as math])
   (:use noir.core
         hiccup.form-helpers
         hiccup.page-helpers 
@@ -12,6 +14,8 @@
         ))
 
 ;Calc functions
+(defn update-values [m f & args]
+ (reduce (fn [r [k v]] (assoc r k (apply f v args))) {} m))
 
 (defn sel-opt [dataset-nm]
   (let [cols (filter #(= (:datasetnm %) dataset-nm) (db/db-to-data "datasets"))]
@@ -21,17 +25,19 @@
   (let [cols (filter #(= (:datasetnm %) dataset-nm) (db/db-to-data "datasets"))]
    (map keyword (clojure.string/split (:selcols (first  cols)) #","))))
 
-(defn group-query [dataset-nm table-nm gattrs]
+(defn group-query [dataset-nm table-nm where gattrs]
   (str "select "
     (str (apply str (interpose ", " gattrs)) ",")
     (apply str (interpose ", " (map #(str " sum(" (name %) ")") (sel-cols dataset-nm))))
     (format " from %s " table-nm)
+    (if (= where "") (str "") (str " where " where))
     (apply str " group by " (interpose ", " gattrs))))
 
 (defn html-table [dataset]
-  [:table {:class "gridtable"} 
-   [:tr (map (fn [x] [:th (name x)]) (keys (first dataset)))]
+  [:table {:class "gridtable" :id "table1"}  
+    [:tr (map (fn [x] [:th  (name x)]) (keys (first dataset)))]
    (for [xs dataset] [:tr (map (fn [x] [:td x]) xs)])
+   [:tfoot [:tr (map (fn [x] [:th (name x)]) (keys (first dataset)))]]
   ])
 
 (defn sum-by [data attrs sel-cols]
@@ -41,7 +47,12 @@
         (apply merge-with + (for [x (get aggregated k)] (select-keys x sel-cols))) 
         (zipmap attrs k)))))
 
-;Generic forms
+(defn dataframe [table]
+  (db/db-to-data table))
+
+(def gattrs '("fy" "month" "pc0" "pc1"))
+
+;Forms
 (defpartial action-accept []
   (check-box "accept-action")"Do you want to procede importing data?"[:br]
   (submit-button "Accept"))
@@ -60,99 +71,46 @@
                (get (first (filter #(= (:pc %) k) (get grouped [n]))) :sale)))))))))))) 
 
 ;/DATASET
-(defn dataframe [table]
-  (db/db-to-data table))
-
 (def tables-n (map :table_name db/tables-list))
 
 (defpage "/dataset/list" []
     (common/layout
       (let [datasets (db/db-to-data "datasets")]
-      ;(prn datasets)
-      (prn (:tablenm (first (filter #(= (:datasetnm %) "Prova01") datasets))))
       (for [dataset (map :datasetnm datasets)]  
         [:ul [:li [:a {:href (str "show/"dataset"/"
                               (:tablenm (first (filter #(= (:datasetnm %) dataset) datasets))))} 
                    dataset]]]))))
 
-;DATASET/CREATE
-(defn get-cols-nms [table] 
-  (do (db/cols-list table)))
-
-(defpartial form-dataset [cols-list table]
-  (text-field "dataset-nm" "Input here dataset name")[:br]
-  (if (= table nil)
-    (assoc-in (drop-down "table" tables-n) [1 :onchange] "this.form.submit()")
-    (assoc-in (drop-down "table" (conj (remove #(= % table) tables-n) table))
- [1 :onchange] "this.form.submit()"))[:br]  
-  [:input {:type "submit" :value "Submit" :name "name"}][:br]
-  (mapcat #(vector (check-box %) % [:br]) cols-list) 
-  )
-
-(defpage "/dataset/create" []
-  (common/layout
-    (form-to [:post "/dataset/create"]
-      (form-dataset(get-cols-nms (first tables-n)) nil))))
-
-;TODO ADD Validation and check unique
-(defpage [:post "/dataset/create"] {:as ks}
-  (common/layout
-    (let [table (ks :table)]
-      (let [cols (get-cols-nms table)] 
-        (form-to [:post "/dataset/create"] 
-            (if (= (:name ks) nil)
-            (form-dataset cols table)
-            (let [sel-ks 
-              (let [cl-ks (map name (keys ks))]
-                (zipmap 
-                    (vector "selcols" "selopt" "datasetnm" "tablenm") 
-                    (vector 
-                      (apply str (interpose "," (keys (into {} 
-                        (filter #(= (second %) true) 
-                          (merge-with = (zipmap cols cols)
-                            (zipmap cl-ks cl-ks)))))))
-                      (apply str (interpose "," (keys (into {} 
-                        (apply dissoc (zipmap cols cols) (keys (zipmap cl-ks cl-ks)))))))
-                      (:dataset-nm ks)
-                      table)))]
-                  (db/insert-records "datasets" sel-ks))))))))
-
 ;/DATASET/SHOW
 ;VARS: SelectColumns; DropDown-Opt
 ;TO DO: handle better the data. Revise "dataframe" function (should also take from other resources, not only db.
-(defpartial drop-downs [nms]
-  (assoc-in (drop-down "dgroups" nms) [1 :onclick] "this.form.submit()")[:br] 
-  (submit-button "Refresh"))
+(defpartial drop-downs [nms gattrs]
+  (label "lb_GroupBy" "Group By") 
+  (assoc-in (drop-down "dgroups" nms) [1 :onclick] "this.form.submit()")[:br]
+  "Grouped by: " (interpose " , " gattrs)[:br] 
+  [:label "Filter by"
+  (text-area "inp-where")][:br]
+  (submit-button "Refresh")
+  (assoc-in (submit-button "Clear") [1 :name] "clear"))
 
 (defpage "/dataset/show/:dataset-nm/:table-nm" {:keys [dataset-nm table-nm]}  
       (common/layout
         (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
-          (drop-downs (sel-opt dataset-nm)))
+          (drop-downs (sel-opt dataset-nm) ""))
         (html-table (vector (first (dataframe table-nm))))))
 
-(def gattrs '("year" "profitcenter" "month"))
+(defn format-numbers [coll sel-numb]
+ (let [cols (map keyword (map #(st/trim (str " sum(" (name %) ") ")) sel-numb))] 
+  (for [m coll] 
+    (merge m (update-values (select-keys m cols) #(math/round(/ % 1000)))))))
+
 (defpage [:post "/dataset/show/:dataset-nm/:table-nm"] {:keys [dataset-nm table-nm] :as rs}    
-  (let [ _rs (assoc-in rs [:dgroups] (remove nil? (list (ses/get :dgroups) (:dgroups rs))))] 
-    (ses/put! :dgroups (:dgroups rs))
-      (common/layout
+  (ses/put! :dgroups (remove #(= nil %) (list (:dgroups rs) (ses/get :dgroups))))
+    (common/layout
       (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
-        (drop-downs (sel-opt dataset-nm)))
-      (html-table (db/query-to-data (group-query dataset-nm table-nm gattrs))))))
-
-
-
-
-(defpage [:post "/dataset/show-/:dataset-nm/:table-nm"] {:keys [dataset-nm table-nm] :as rs}    
-  (let [ _rs (assoc-in rs [:dgroups] (remove nil? (list (ses/get :dgroups) (:dgroups rs))))] 
-    (ses/put! :dgroups (:dgroups rs))
-      (common/layout
-      (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
-        (drop-downs (sel-opt dataset-nm)))
-      (html-table
-        (sum-by 
-          (dataframe table-nm) 
-          (reverse (map keyword (remove (set [""]) (flatten (vals (dissoc _rs :dataset-nm :table-nm))))))
-          (sel-cols dataset-nm)))
-      [:a {:href (format "/dataset/show/%s/%s" dataset-nm table-nm)} "Back"]
-    )))
+        (drop-downs (sel-opt dataset-nm) (distinct (flatten (ses/get :dgroups)))))
+      (let [l_gattrs (distinct (flatten (ses/get :dgroups)))]
+        (html-table 
+          (filter #(> ((keyword "sum(ordc)") %) 500) (format-numbers (db/query-to-data (group-query dataset-nm table-nm (:inp-where rs) l_gattrs)) (sel-cols dataset-nm)))))
+    (if (:clear rs) (ses/remove! :dgroups))))
 

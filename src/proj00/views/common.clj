@@ -7,9 +7,12 @@
             (html5
               [:head
                [:title "proj00"]
-               (include-css "/css/noir.css")]
+               (include-css "/css/noir.css")
+               (include-js "/js/tablefilter.js")]
               [:body
-               [:div#wrapper
+               [:script
+                  "setFilterGrid('example');"]
+              [:div#wrapper
               [:div#header
                 [:h1 "Happy data"] 
                 [:ul 
