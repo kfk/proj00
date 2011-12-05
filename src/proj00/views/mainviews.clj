@@ -33,9 +33,16 @@
     (if (= where "") (str "") (str " where " where))
     (apply str " group by " (interpose ", " gattrs))))
 
+(defn html-table-js [gattrs val_cols]
+  [:script (format  
+    "$(document).ready(function () {
+	$.smtf('#_table', [%s]);
+      });"
+  (apply str (interpose "," (concat (repeat (count gattrs) "'text'") (repeat (count val_cols) "'number'")))))])
+
 (defn html-table [dataset]
-  [:table {:class "gridtable" :id "table1"}  
-    [:tr (map (fn [x] [:th  (name x)]) (keys (first dataset)))]
+  [:table {:class "gridtable" :id "_table"}  
+    [:thead [:tr (map (fn [x] [:th  (name x)]) (keys (first dataset)))]]
    (for [xs dataset] [:tr (map (fn [x] [:td x]) xs)])
    [:tfoot [:tr (map (fn [x] [:th (name x)]) (keys (first dataset)))]]
   ])
@@ -109,8 +116,10 @@
     (common/layout
       (form-to [:post (format "/dataset/show/%s/%s" dataset-nm table-nm)]
         (drop-downs (sel-opt dataset-nm) (distinct (flatten (ses/get :dgroups)))))
+        (html-table-js (distinct (flatten (ses/get :dgroups))) (sel-cols dataset-nm))
       (let [l_gattrs (distinct (flatten (ses/get :dgroups)))]
+        (html-table-js l_gattrs (sel-cols dataset-nm))
         (html-table 
-          (filter #(> ((keyword "sum(ordc)") %) 500) (format-numbers (db/query-to-data (group-query dataset-nm table-nm (:inp-where rs) l_gattrs)) (sel-cols dataset-nm)))))
+          (format-numbers (db/query-to-data (group-query dataset-nm table-nm (:inp-where rs) l_gattrs)) (sel-cols dataset-nm))))
     (if (:clear rs) (ses/remove! :dgroups))))
 

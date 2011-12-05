@@ -8,10 +8,11 @@
               [:head
                [:title "proj00"]
                (include-css "/css/noir.css")
-               (include-js "/js/tablefilter.js")]
+               (include-js "/js/jquery-1.4.4.min.js"
+                           "/js/jquery.smtf.js"
+                           "/js/jquery.tablesorter.js"
+                           "/js/jquery.tablesorter.pager.js")]
               [:body
-               [:script
-                  "setFilterGrid('example');"]
               [:div#wrapper
               [:div#header
                 [:h1 "Happy data"] 
