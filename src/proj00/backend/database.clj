@@ -44,3 +44,13 @@
   (sql/with-connection db
     (sql/with-query-results dataframe [(format "select * from %s" table)]
       (doall dataframe))))
+
+(defn group-query [sel-cols table-nm where gattrs]
+  (str "select "
+    (str (apply str (interpose ", " gattrs)) ",")
+    (apply str (interpose ", " (map #(str " sum(" (name %) ")") sel-cols)))
+    (format " from %s " table-nm)
+    (if (= where "") (str "") (str " where " where))
+    (apply str " group by " (interpose ", " gattrs))))
+
+
